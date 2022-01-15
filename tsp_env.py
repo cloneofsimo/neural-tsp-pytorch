@@ -18,6 +18,27 @@ import numpy as np
 
 
 class TspEnv:
+    """
+    Tsp Environment.
+
+    Graph types:
+        er: Erdos-Renyi
+        ba: Barabasi-Albert
+        regular: regular graph
+        custom: custom graph
+
+    Returns: state, reward, done, info
+        "vertex_occupancy" : np.ndarray
+            1 if vertex is visited, 0 otherwise
+        "pos" : np.ndarray
+            position of each vertex
+        "current_idx" : int
+            current index of the agent
+        "start_idx" : int
+            starting index of the agent, by default, 0.
+        "edge_index" : np.ndarray
+            edge index of the graph
+    """
 
     GRAPH_SET = {
         "er": partial(nx.erdos_renyi_graph, p=0.5),
@@ -48,26 +69,26 @@ class TspEnv:
 
             self.custom_pos = custom_pos
 
-        self.start_pos: int = 0
-        self.current_pos: int = 0
+        self.start_idx: int = 0
+        self.current_idx: int = 0
 
     def _get_state(self) -> Dict[str, np.ndarray]:
         return {
             "vertex_occupancy": self.vertex_occupancy,
             "edge_index": self.edge_index,
             "pos": self.pos,
-            "start_pos": self.start_pos,
-            "current_pos": self.current_pos,
+            "start_idx": self.start_idx,
+            "current_idx": self.current_idx,
         }
 
     def reset(self, seed: Optional[int]):
 
         if seed is not None:
-            nx.set_random_seed(seed)
+            np.random.seed(seed)
             random.seed(seed)
 
-        self.start_pos = 0
-        self.current_pos = 0
+        self.start_idx = 0
+        self.current_idx = 0
 
         if self.graph_type == "custom":
 
@@ -75,13 +96,14 @@ class TspEnv:
             self.graph = nx.Graph()
             for i in range(self.n_nodes):
                 self.graph.add_node(i)
-                self.graph.nodes[i]["pos"] = self.custom_pos[i]
+
                 for j in range(i + 1, self.n_nodes):
                     self.graph.add_edge(i, j)
-
+            self.pos = np.array(self.custom_pos)
         else:
             self.graph = self.GRAPH_SET[self.graph_type](n=self.n_nodes)
             pos = nx.spring_layout(self.graph, dim=self.dim)
+            # put pos into nx graph
 
             self.pos = np.array([pos[i] for i in range(self.n_nodes)])
 
@@ -91,10 +113,13 @@ class TspEnv:
             / (self.pos.max(axis=0) - self.pos.min(axis=0))
         ) * 2 - 1
 
+        for i in self.graph.nodes:
+            self.graph.nodes[i]["pos"] = pos[i]
+
         self.vertex_occupancy = np.zeros(self.n_nodes)
-        self.vertex_occupancy[self.start_pos] = 1
+        self.vertex_occupancy[self.start_idx] = 1
         self.length = 0
-        self.selection_order = [self.start_pos]
+        self.selection_order = [self.start_idx]
 
         self.edge_index = np.array(self.graph.edges)
 
@@ -108,7 +133,7 @@ class TspEnv:
             return self._get_state(), -(self.dim ** (1 / self.lp)) * 2, True, {}
 
         self.vertex_occupancy[action] = 1
-        self.current_pos = action
+        self.current_idx = action
 
         this_len = np.linalg.norm(
             self.graph.nodes[action]["pos"]
@@ -116,16 +141,167 @@ class TspEnv:
             ord=self.lp,
         )
 
-        self.length += this_len
         self.selection_order.append(action)
 
         done = False
         if len(self.selection_order) == self.n_nodes:
+            this_len += np.linalg.norm(
+                self.graph.nodes[self.selection_order[0]]["pos"]
+                - self.graph.nodes[self.selection_order[-1]]["pos"],
+                ord=self.lp,
+            )
+            # just for rendering.
+            self.selection_order.append(self.selection_order[0])
             done = True
 
+        self.length += this_len
         return (
             self._get_state(),
             -this_len,
             done,
             {},
         )
+
+    def render(self, save_path="./img_folder"):
+
+        import os
+
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        import matplotlib.pyplot as plt
+        import matplotlib.lines as mlines
+        import matplotlib.patches as mpatches
+
+        fig, ax = plt.subplots()
+        ax.set_aspect("equal")
+
+        # set range of x and y
+        x_min, x_max = self.pos[:, 0].min(), self.pos[:, 0].max()
+        y_min, y_max = self.pos[:, 1].min(), self.pos[:, 1].max()
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+
+        for i in range(self.n_nodes):
+            ax.add_patch(
+                mpatches.Circle(
+                    self.pos[i],
+                    radius=0.05,
+                    color="black" if self.vertex_occupancy[i] == 0 else "grey",
+                )
+            )
+
+        # plot current pos
+
+        ax.add_patch(
+            mpatches.Circle(
+                self.pos[self.current_idx],
+                radius=0.05,
+                color="red",
+            )
+        )
+
+        for i in range(len(self.selection_order) - 1):
+            ax.add_line(
+                mlines.Line2D(
+                    [
+                        self.pos[self.selection_order[i]][0],
+                        self.pos[self.selection_order[i + 1]][0],
+                    ],
+                    [
+                        self.pos[self.selection_order[i]][1],
+                        self.pos[self.selection_order[i + 1]][1],
+                    ],
+                    color="black",
+                )
+            )
+
+        # put info on figure
+
+        fig.suptitle(
+            f"{self.graph_type} graph, {self.n_nodes} nodes, {self.lp}-norm, Total length: {self.length:.3f} \n \
+            current_idx: {self.current_idx}, start_idx: {self.start_idx}",
+        )
+
+        plt.savefig(
+            os.path.join(save_path, f"tsp_env_{len(self.selection_order) :03d}.png")
+        )
+        plt.close()
+
+
+def heuristic(state, eps=0.1):
+    """
+    Select minimum distance vertex, greedily.
+    Simple heuristic to debug / test the enviornment
+
+    Args:
+        state :
+            "vertex_occupancy" : np.ndarray
+                1 if vertex is visited, 0 otherwise
+            "pos" : np.ndarray
+                position of each vertex
+            "current_idx" : int
+                current index of the agent
+            "start_idx" : int
+                starting index of the agent, by default, 0.
+            "edge_index" : np.ndarray
+                edge index of the graph
+
+        eps : float
+            epsilon for greedy selection
+
+    Returns:
+        int : index of the vertex to visit
+    """
+
+    n_nodes = state["vertex_occupancy"].shape[0]
+
+    # greedy selection
+
+    current_idx = state["current_idx"]
+
+    pos = state["pos"]
+
+    dist = np.linalg.norm(pos - pos[current_idx], ord=2, axis=1)
+    dist[state["vertex_occupancy"] == 1] = np.inf
+
+    return np.argmin(dist)
+
+
+def demo_heuristic():
+    """
+    Demo the heuristic runner.
+    """
+
+    env = TspEnv(n_nodes=20, dim=2, graph_type="ba")
+
+    state = env.reset(1)
+    env.render("./img_folder/tmp")
+    while True:
+
+        action = heuristic(state)
+
+        state, reward, done, info = env.step(action)
+
+        print(f"action: {action}, reward: {reward}, done: {done}")
+        env.render("./img_folder/tmp")
+        if done:
+            break
+
+    print(env.length)
+
+    # convert tmp to gif
+    import subprocess
+
+    subprocess.call(
+        ["convert", "-delay", "100", "./img_folder/tmp/*.png", "./img_folder/tmp.gif"]
+    )
+
+    # remove tmp folder
+    import shutil
+
+    shutil.rmtree("./img_folder/tmp")
+
+
+if __name__ == "__main__":
+    demo_heuristic()
