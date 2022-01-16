@@ -41,8 +41,9 @@ class ResGraphModule(nn.Module):
     ) -> torch.Tensor:
         x_ = x
 
-        edge_attr = self.edge_lin(edge_attr)
-        # print(x.shape, edge_index.shape, edge_attr.shape)
+        if edge_attr is not None:
+            edge_attr = self.edge_lin(edge_attr)
+
         x = self.conv(x, edge_index, edge_attr)
         x = self.relu(x)
 
@@ -51,24 +52,45 @@ class ResGraphModule(nn.Module):
         return x
 
 
-class GraphConvEmb(nn.Module):
+class GraphEdgeConvEmb(nn.Module):
     def __init__(
         self,
         hidden_channels: int,
+        input_edge_channels: int = None,
+        input_edge_n_vocab: int = None,
+        input_vert_channels: int = None,
+        input_vert_n_vocab: int = None,
         grow_size: float = 1.5,
         n_layers: int = 5,
         n_ff: int = 512,
         residual: bool = True,
         dropout: float = 0.5,
         n_ydim: int = 1,
-        n_vocab: int = 500,
     ) -> None:
-        super(GraphConvEmb, self).__init__()
+        super(GraphEdgeConvEmb, self).__init__()
 
         def n_width(n) -> int:
             return math.floor(pow(grow_size, n) + 1e-2)
 
-        self.edge_emb = nn.Linear(4, hidden_channels, bias=False)
+        if input_vert_n_vocab is not None:
+            self.vert_emb = nn.Embedding(
+                input_vert_n_vocab + 1, hidden_channels, padding_idx=input_vert_n_vocab
+            )
+
+        else:
+            self.vert_emb = nn.Linear(input_vert_channels, hidden_channels, bias=False)
+
+        if input_edge_n_vocab is not None:
+            self.edge_emb = nn.Embedding(
+                input_edge_n_vocab + 1,
+                input_edge_channels,
+                padding_idx=input_edge_n_vocab,
+            )
+
+        else:
+            self.edge_emb = nn.Linear(
+                input_edge_channels, input_edge_channels, bias=False
+            )
 
         self.main = gnn.Sequential(
             "x, edge_index, edge_attr",
@@ -86,8 +108,6 @@ class GraphConvEmb(nn.Module):
             ],
         )
 
-        self.vert_emb = nn.Embedding(n_vocab + 1, hidden_channels, padding_idx=n_vocab)
-
         self.head = nn.Sequential(
             nn.Linear(hidden_channels, n_ff),
             nn.GELU(),
@@ -104,7 +124,10 @@ class GraphConvEmb(nn.Module):
     ) -> torch.Tensor:
 
         x = self.vert_emb(x)
-        edge_attr = self.edge_emb(edge_attr)
+
+        if edge_attr is not None:
+            edge_attr = self.edge_emb(edge_attr)
+
         x = self.main(x, edge_index, edge_attr)
         x = self.head(x)
 
