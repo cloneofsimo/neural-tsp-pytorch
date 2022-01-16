@@ -81,7 +81,7 @@ class TspEnv:
             "current_idx": self.current_idx,
         }
 
-    def reset(self, seed: Optional[int]) -> Dict[str, np.ndarray]:
+    def reset(self, seed: Optional[int] = None) -> Dict[str, np.ndarray]:
         """
         Reset the environment.
 
