@@ -64,7 +64,7 @@ class GraphEdgeConvEmb(nn.Module):
         n_layers: int = 5,
         n_ff: int = 512,
         residual: bool = True,
-        dropout: float = 0.5,
+        dropout: float = 0.0,
         n_ydim: int = 1,
     ) -> None:
         super(GraphEdgeConvEmb, self).__init__()

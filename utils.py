@@ -72,3 +72,41 @@ def batching_behavior(L: List[Data]):
     batch = Batch.from_data_list(L)
 
     return batch
+
+
+from torch_scatter import scatter
+
+
+def g_argmax(y, batch):
+    """
+    Returns batch-wise graph-level argmax of y.
+    """
+
+    # get the batch size
+    batch_size = int(batch.max().item() + 1)
+
+    # get the argmax for each batch
+    batch_argmax = []
+    for i in range(batch_size):
+        batch_argmax.append(y[batch == i].argmax())
+
+    # return the argmax for each batch
+    return torch.tensor(batch_argmax)
+
+
+def g_gather_index(y, batch, index):
+    """
+    Gathers y for each batch.
+    """
+
+    # get the batch size
+    batch_size = int(batch.max().item() + 1)
+
+    # get the y from gather index for each batch
+
+    batch_gather_index = []
+    for i in range(batch_size):
+        batch_gather_index.append(y[batch == i][index[i]])
+
+    # return the argmax for each batch
+    return torch.cat(batch_gather_index)
