@@ -8,35 +8,16 @@ import random
 
 import torch
 import torch.nn as nn
-import torch_geometric.data
+import torch_geometric.data as gdata
 
 
-from dqn.model import GraphConvEmb
-
-# TODO: Behavior of this buffer is not yet defined.
-class GraphBuffer:
-    def __init__(self, capacity: int):
-
-        self.capacity = capacity
-
-        self.buffer = []
-
-    def __getitem__(self, key):
-        return self.buffer[key]
-
-    def __len__(self):
-        return self.capacity
-
-    def __setitem__(self, key, value):
-        self.buffer[key] = value
-
+from dqn.model import GraphEdgeConvEmb
+from utils import state_to_pyg_data
 
 # TODO: Too messy... need more refactoring.
 class GreedyVertexSelector:
     def __init__(
         self,
-        state_space: List[int],
-        action_space: int,
         max_memory_size: int,
         batch_size: int,
         gamma: float = 0.9,
@@ -48,23 +29,27 @@ class GreedyVertexSelector:
     ):
 
         # Define DQN Layers
-        self.state_space = state_space
-        self.action_space = action_space
         self.pretrained = pretrained
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # DQN network
-        self.dqn = GraphConvEmb().to(self.device)
+        self.dqn = GraphEdgeConvEmb(
+            hidden_channels=31,
+            input_vert_channels=2,
+            input_vert_n_vocab=4,
+        ).to(self.device)
 
         self.optimizer = torch.optim.Adam(self.dqn.parameters(), lr=lr)
 
         # Create memory
         self.max_memory_size = max_memory_size
 
-        self.STATE_MEM = GraphBuffer(max_memory_size)
+        self.STATE_PRV_MEM = [0 for _ in range(self.max_memory_size)]
+        self.STATE_AFT_MEM = [0 for _ in range(self.max_memory_size)]
+
         self.ACTION_MEM = torch.zeros(max_memory_size, 1)
         self.REWARD_MEM = torch.zeros(max_memory_size, 1)
-        self.STATE2_MEM = torch.zeros(max_memory_size, self.state_space)
+
         self.DONE_MEM = torch.zeros(max_memory_size, 1)
 
         self.ending_position: int = 0
@@ -83,10 +68,12 @@ class GreedyVertexSelector:
 
     def remember(self, state, action, reward, state2, done):
         """Store the experiences in a buffer to use later"""
-        self.STATE_MEM[self.ending_position] = state.float()
-        self.ACTION_MEM[self.ending_position] = action.float()
+        self.STATE_PRV_MEM[self.ending_position] = state_to_pyg_data(state)
+        self.STATE_AFT_MEM[self.ending_position] = state_to_pyg_data(state2)
+
+        self.ACTION_MEM[self.ending_position] = action.long()
         self.REWARD_MEM[self.ending_position] = reward.float()
-        self.STATE2_MEM[self.ending_position] = state2.float()
+
         self.DONE_MEM[self.ending_position] = done.float()
         self.ending_position = (
             self.ending_position + 1
@@ -96,10 +83,15 @@ class GreedyVertexSelector:
     def batch_experiences(self):
         """Randomly sample 'batch size' experiences"""
         idx = random.choices(range(self.num_in_queue), k=self.memory_sample_size)
-        STATE = self.STATE_MEM[idx]
+        STATE = self.STATE_PRV_MEM[idx]
+        STATE2 = self.STATE_AFT_MEM[idx]
+
+        STATE = gdata.Batch.from_data_list(STATE)
+        STATE2 = gdata.Batch.from_data_list(STATE2)
+
         ACTION = self.ACTION_MEM[idx]
         REWARD = self.REWARD_MEM[idx]
-        STATE2 = self.STATE2_MEM[idx]
+
         DONE = self.DONE_MEM[idx]
         return STATE, ACTION, REWARD, STATE2, DONE
 
@@ -107,7 +99,7 @@ class GreedyVertexSelector:
         """Epsilon-greedy action"""
 
         if random.random() < self.exploration_rate:
-            return torch.tensor([[random.randrange(self.action_space)]])
+            return torch.tensor([[random.choice(state["vertex_occupancy"] == 0)]])
         else:
             return (
                 torch.argmax(self.dqn(state.to(self.device)))

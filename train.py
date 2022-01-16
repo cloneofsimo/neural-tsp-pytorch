@@ -1,4 +1,5 @@
 from tqdm import tqdm
+import pickle
 
 import numpy as np
 import torch
@@ -11,19 +12,13 @@ from tsp_env import TspEnv
 # TODO: not tested.
 def run(training_mode, pretrained, num_episodes=1000, exploration_max=1):
 
-    env = TspEnv()
-
-    observation_space = env.observation_space.shape
-    action_space = env.action_space.n
+    env = TspEnv(graph_type="ba", n_nodes=20, dim=2)
 
     agent = GreedyVertexSelector(
-        state_space=observation_space,
-        action_space=action_space,
         max_memory_size=30000,
         batch_size=32,
         gamma=0.90,
         lr=0.00025,
-        dropout=0.2,
         exploration_max=1.0,
         exploration_min=0.02,
         exploration_decay=0.99,
@@ -32,7 +27,7 @@ def run(training_mode, pretrained, num_episodes=1000, exploration_max=1):
 
     # Restart the enviroment for each episode
     num_episodes = num_episodes
-    env.reset()
+    env.reset(1)
 
     total_rewards = []
     # if training_mode and pretrained:
@@ -41,7 +36,7 @@ def run(training_mode, pretrained, num_episodes=1000, exploration_max=1):
 
     for ep_num in tqdm(range(num_episodes)):
         state = env.reset()
-        state = torch.Tensor([state])
+
         total_reward = 0
         steps = 0
         while True:
@@ -50,7 +45,7 @@ def run(training_mode, pretrained, num_episodes=1000, exploration_max=1):
 
             state_next, reward, terminal, info = env.step(int(action[0]))
             total_reward += reward
-            state_next = torch.Tensor([state_next])
+
             reward = torch.tensor([reward]).unsqueeze(0)
 
             terminal = torch.tensor([int(terminal)]).unsqueeze(0)
@@ -96,3 +91,7 @@ def run(training_mode, pretrained, num_episodes=1000, exploration_max=1):
         torch.save(agent.DONE_MEM, "DONE_MEM.pt")
 
     env.close()
+
+
+if __name__ == "__main__":
+    run(True, False)
