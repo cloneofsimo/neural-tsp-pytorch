@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, List, Union
 
 import torch
 from torch_geometric.data import Data
@@ -54,3 +54,21 @@ def state_to_pyg_data(state: Dict[str, Union[np.ndarray, int]]) -> Data:
     )
 
     return data
+
+
+def batching_behavior(L: List[Data]):
+    """
+    Batch a list of pyg data objects.
+
+    Args:
+        L : List[Data]
+            list of pyg data objects
+    Returns:
+        data : Data
+            batched data
+    """
+    from torch_geometric.data import Batch
+
+    batch = Batch.from_data_list(L)
+
+    return batch

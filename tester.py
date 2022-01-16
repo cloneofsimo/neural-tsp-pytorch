@@ -33,7 +33,7 @@ def test_state_tf():
 def test_gcn_state():
     from dqn.model import GraphEdgeConvEmb
     from tsp_env import TspEnv, heuristic
-    from utils import state_to_pyg_data
+    from utils import state_to_pyg_data, batching
 
     model = GraphEdgeConvEmb(
         hidden_channels=31,
@@ -43,14 +43,25 @@ def test_gcn_state():
 
     env = TspEnv(n_nodes=20, dim=2, graph_type="ba")
     state = env.reset(1)
+    states = []
+    for i in range(5):
+        action = heuristic(state)
+        state, reward, done, info = env.step(action)
+        # env.render("./tmp_rnder")
 
-    pyg_data = state_to_pyg_data(state)
+        pyg_data = state_to_pyg_data(state)
+        states.append(pyg_data)
+
+    pyg_data = batching(states)
 
     y = model.forward(
-        x=pyg_data.x, edge_index=pyg_data.edge_index, x_emb=pyg_data.x_occ
+        x=pyg_data.x,
+        edge_index=pyg_data.edge_index,
+        x_emb=pyg_data.x_occ,
+        batch=pyg_data.batch,
     )
 
-    print(y)
+    print(y.shape)
 
 
 if __name__ == "__main__":
