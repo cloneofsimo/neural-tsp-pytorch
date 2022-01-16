@@ -3,16 +3,18 @@ Edited from https://towardsdatascience.com/deep-q-network-with-pytorch-146bfa939
 Thank you for amazing post!
 """
 
-from typing import List, Tuple, Type
+from functools import partial
+from typing import Any, Dict, List, Tuple, Type
 import random
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch_geometric.data as gdata
-
+from torch_geometric.nn import global_max_pool
 
 from dqn.model import GraphEdgeConvEmb
-from utils import state_to_pyg_data
+from utils import state_to_pyg_data, g_argmax, g_gather_index
 
 # TODO: Too messy... need more refactoring.
 class GreedyVertexSelector:
@@ -34,9 +36,11 @@ class GreedyVertexSelector:
 
         # DQN network
         self.dqn = GraphEdgeConvEmb(
-            hidden_channels=31,
+            hidden_channels=64,
             input_vert_channels=2,
             input_vert_n_vocab=4,
+            grow_size=1.3,
+            n_layers=6,
         ).to(self.device)
 
         self.optimizer = torch.optim.Adam(self.dqn.parameters(), lr=lr)
@@ -47,7 +51,7 @@ class GreedyVertexSelector:
         self.STATE_PRV_MEM = [0 for _ in range(self.max_memory_size)]
         self.STATE_AFT_MEM = [0 for _ in range(self.max_memory_size)]
 
-        self.ACTION_MEM = torch.zeros(max_memory_size, 1)
+        self.ACTION_MEM = torch.zeros(max_memory_size, 1).long()
         self.REWARD_MEM = torch.zeros(max_memory_size, 1)
 
         self.DONE_MEM = torch.zeros(max_memory_size, 1)
@@ -66,12 +70,22 @@ class GreedyVertexSelector:
 
         self.exploration_decay = exploration_decay
 
+    def _q_function(self, pyg_data):
+        q = self.dqn(
+            x=pyg_data.x,
+            edge_index=pyg_data.edge_index,
+            x_emb=pyg_data.x_occ,
+            batch=pyg_data.batch,
+        )
+
+        return q
+
     def remember(self, state, action, reward, state2, done):
         """Store the experiences in a buffer to use later"""
         self.STATE_PRV_MEM[self.ending_position] = state_to_pyg_data(state)
         self.STATE_AFT_MEM[self.ending_position] = state_to_pyg_data(state2)
 
-        self.ACTION_MEM[self.ending_position] = action.long()
+        self.ACTION_MEM[self.ending_position] = action
         self.REWARD_MEM[self.ending_position] = reward.float()
 
         self.DONE_MEM[self.ending_position] = done.float()
@@ -83,11 +97,10 @@ class GreedyVertexSelector:
     def batch_experiences(self):
         """Randomly sample 'batch size' experiences"""
         idx = random.choices(range(self.num_in_queue), k=self.memory_sample_size)
-        STATE = self.STATE_PRV_MEM[idx]
-        STATE2 = self.STATE_AFT_MEM[idx]
 
-        STATE = gdata.Batch.from_data_list(STATE)
-        STATE2 = gdata.Batch.from_data_list(STATE2)
+        STATE = gdata.Batch.from_data_list([self.STATE_PRV_MEM[i] for i in idx])
+
+        STATE2 = gdata.Batch.from_data_list([self.STATE_AFT_MEM[i] for i in idx])
 
         ACTION = self.ACTION_MEM[idx]
         REWARD = self.REWARD_MEM[idx]
@@ -95,18 +108,27 @@ class GreedyVertexSelector:
         DONE = self.DONE_MEM[idx]
         return STATE, ACTION, REWARD, STATE2, DONE
 
-    def act(self, state):
+    @torch.no_grad()
+    def act(self, state: Dict[str, Any]) -> int:
+
         """Epsilon-greedy action"""
 
         if random.random() < self.exploration_rate:
-            return torch.tensor([[random.choice(state["vertex_occupancy"] == 0)]])
+            # select index position from where vertex_occupancy is zero
+            veroc = state["vertex_occupancy"]
+            indexset = np.arange(veroc.shape[0])
+            # print(indexset)
+            # print(veroc.shape)
+            indexset = indexset[veroc == 0]
+            ra = random.choice(indexset.tolist())
+            # print(ra)
+            return ra
         else:
-            return (
-                torch.argmax(self.dqn(state.to(self.device)))
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .cpu()
-            )
+
+            gdata = state_to_pyg_data(state).to(self.device)
+            ac = g_argmax(self._q_function(gdata)).detach().cpu().item()
+            # print(ac)
+            return ac
 
     def experience_replay(self):
         if self.memory_sample_size > self.num_in_queue:
@@ -122,10 +144,17 @@ class GreedyVertexSelector:
 
         self.optimizer.zero_grad()
         # Q-Learning target is Q*(S, A) <- r + γ max_a Q(S', a)
-        target = REWARD + torch.mul(
-            (self.gamma * self.dqn(STATE2).max(1).values.unsqueeze(1)), 1 - DONE
-        )
-        current = self.dqn(STATE).gather(1, ACTION.long())
+
+        maxQ = global_max_pool(self._q_function(STATE2), STATE2.batch)
+
+        # print(maxQ.max(), maxQ.min())
+
+        # print(REWARD.shape, maxQ.shape)
+        # print(DONE)
+        target = REWARD + self.gamma * maxQ * (1 - DONE)
+        current = g_gather_index(self._q_function(STATE), STATE.batch, ACTION)
+
+        # print(current.mean())
 
         loss = self.l1(current, target)
         loss.backward()  # Compute gradients

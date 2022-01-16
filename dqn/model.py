@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch_geometric import nn as gnn
 from torch_geometric.nn import GraphConv
+from torch_geometric.data import Data
 from torch_geometric.typing import OptTensor, OptPairTensor, Adj, Size
 
 
@@ -30,6 +31,8 @@ class ResGraphModule(nn.Module):
 
         self.edge_lin = nn.Linear(edge_channels, in_channels, bias=False)
 
+        self.bn = nn.BatchNorm1d(in_channels)
+
         if residual:
             self.res_lin = nn.Linear(in_channels, out_channels, bias=False)
 
@@ -46,6 +49,8 @@ class ResGraphModule(nn.Module):
 
         x = self.conv(x, edge_index, edge_attr)
         x = self.relu(x)
+
+        x = self.bn(x)
 
         if self.residual:
             return x + self.res_lin(x_)

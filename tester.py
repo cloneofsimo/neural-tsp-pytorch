@@ -42,11 +42,11 @@ def test_gcn_state():
     model = GraphEdgeConvEmb(
         hidden_channels=31,
         input_vert_channels=2,
-        # input_vert_n_vocab=4,
+        input_vert_n_vocab=4,
     )
 
     env = TspEnv(n_nodes=5, dim=2, graph_type="ba")
-    state = env.reset(5)
+    state = env.reset(2)
     states = []
     torch.no_grad()
     for i in range(5):
@@ -59,7 +59,7 @@ def test_gcn_state():
         y1 = model.forward(
             x=pyg_batched.x,
             edge_index=pyg_batched.edge_index,
-            # x_emb=pyg_batched.x_occ,
+            x_emb=pyg_batched.x_occ,
             batch=pyg_batched.batch,
         )
         print("GCN Result", y1)
@@ -67,7 +67,7 @@ def test_gcn_state():
         act = g_argmax(y1, pyg_batched.batch)
         print("Chosen action", act)
         states.append(pyg_data1)
-        state, reward, done, info = env.step(act.item())
+        state, reward, done, info = env.step(1)
 
     pyg_data_all = batching_behavior(states)
 
@@ -78,7 +78,7 @@ def test_gcn_state():
     y = model.forward(
         x=pyg_data_all.x,
         edge_index=pyg_data_all.edge_index,
-        # x_emb=pyg_data_all.x_occ,
+        x_emb=pyg_data_all.x_occ,
         batch=pyg_data_all.batch,
     )
 

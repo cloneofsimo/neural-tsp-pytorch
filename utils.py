@@ -10,7 +10,7 @@ def state_to_pyg_data(state: Dict[str, Union[np.ndarray, int]]) -> Data:
     Convert a state to a pyg data object.
 
     Args:
-        state :
+        state : Dict[str, Union[np.ndarray, int]]
             "vertex_occupancy" : np.ndarray
                 1 if vertex is visited, 0 otherwise
             "pos" : np.ndarray
@@ -77,18 +77,23 @@ def batching_behavior(L: List[Data]):
 from torch_scatter import scatter
 
 
-def g_argmax(y, batch):
+def g_argmax(y, batch=None):
     """
     Returns batch-wise graph-level argmax of y.
     """
 
     # get the batch size
-    batch_size = int(batch.max().item() + 1)
 
     # get the argmax for each batch
+    # print(y.shape)
     batch_argmax = []
-    for i in range(batch_size):
-        batch_argmax.append(y[batch == i].argmax())
+    if batch is not None:
+        batch_size = int(batch.max().item() + 1)
+        for i in range(batch_size):
+            batch_argmax.append(y[batch == i].argmax())
+
+    else:
+        batch_argmax.append(y.squeeze().argmax())
 
     # return the argmax for each batch
     return torch.tensor(batch_argmax)

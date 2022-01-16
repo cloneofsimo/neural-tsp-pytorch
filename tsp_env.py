@@ -81,23 +81,7 @@ class TspEnv:
             "current_idx": self.current_idx,
         }
 
-    def reset(self, seed: Optional[int] = None) -> Dict[str, np.ndarray]:
-        """
-        Reset the environment.
-
-        Args:
-            seed: random seed
-
-        Returns:
-            state: state of the environment
-        """
-
-        if seed is not None:
-            np.random.seed(seed)
-            random.seed(seed)
-
-        self.start_idx = 0
-        self.current_idx = 0
+    def _reset_graph(self) -> None:
 
         if self.graph_type == "custom":
 
@@ -130,6 +114,30 @@ class TspEnv:
         for i in self.graph.nodes:
             self.graph.nodes[i]["pos"] = pos[i]
 
+    def reset(
+        self, seed: Optional[int] = None, new_graph: bool = False
+    ) -> Dict[str, np.ndarray]:
+        """
+        Reset the environment.
+
+        Args:
+            seed: random seed
+            new_graph: whether to generate a new graph.
+
+        Returns:
+            state: state of the environment
+        """
+
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
+
+        if new_graph:
+            self._reset_graph()
+
+        self.start_idx = 0
+        self.current_idx = 0
+
         self.vertex_occupancy = np.zeros(self.n_nodes)
         self.vertex_occupancy[self.start_idx] = 1
         self.length = 0
@@ -145,8 +153,8 @@ class TspEnv:
 
         assert action in range(self.n_nodes), "invalid action, must be in [0, n_nodes)"
 
-        if self.vertex_occupancy[action] == 1:  # already visited
-            return self._get_state(), -(self.dim ** (1 / self.lp)) * 2, True, {}
+        if self.vertex_occupancy[action] > 0:  # already visited
+            return self._get_state(), -3, True, {"length": self.length}
 
         self.vertex_occupancy[action] = 1
         self.current_idx = action
@@ -173,9 +181,9 @@ class TspEnv:
         self.length += this_len
         return (
             self._get_state(),
-            -this_len,
+            (4 - this_len) / 10,
             done,
-            {},
+            {"length": self.length},
         )
 
     def render(self, save_path="./img_folder") -> None:
