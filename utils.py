@@ -39,6 +39,18 @@ def state_to_pyg_data(state: Dict[str, Union[np.ndarray, int]]) -> Data:
     x_occ[start_idx] = 2
     x_occ[current_idx] = 3
 
-    data = Data(x=torch.tensor(pos), x_occ=x_occ, edge_index=torch.tensor(edge_index))
+    # duplicate edge index with flipped version to make it undirected]
+    edge_index = torch.tensor(edge_index, dtype=torch.long)
+    edge_index_flipped = torch.cat(
+        [edge_index, torch.flip(edge_index, dims=[1])], dim=0
+    )
+
+    pos = torch.tensor(pos, dtype=torch.float)
+
+    data = Data(
+        x=pos,
+        edge_index=edge_index_flipped.t().contiguous(),
+        x_occ=x_occ,
+    )
 
     return data

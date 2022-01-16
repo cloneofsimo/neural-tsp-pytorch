@@ -116,6 +116,11 @@ class TspEnv:
 
             self.pos = np.array([pos[i] for i in range(self.n_nodes)])
 
+            # make it complete
+            for i in range(self.n_nodes):
+                for j in range(i + 1, self.n_nodes):
+                    self.graph.add_edge(i, j)
+
         # min-max normalize pos
         self.pos = (
             (self.pos - self.pos.min(axis=0))
