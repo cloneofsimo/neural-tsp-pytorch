@@ -10,7 +10,7 @@ TODO: Support for other graph types.
 
 import random
 from functools import partial
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
 import networkx as nx
@@ -81,7 +81,16 @@ class TspEnv:
             "current_idx": self.current_idx,
         }
 
-    def reset(self, seed: Optional[int]):
+    def reset(self, seed: Optional[int]) -> Dict[str, np.ndarray]:
+        """
+        Reset the environment.
+
+        Args:
+            seed: random seed
+
+        Returns:
+            state: state of the environment
+        """
 
         if seed is not None:
             np.random.seed(seed)
@@ -125,7 +134,9 @@ class TspEnv:
 
         return self._get_state()
 
-    def step(self, action: int):
+    def step(
+        self, action: int
+    ) -> Tuple[Dict[str, np.ndarray], float, bool, Dict[str, Any]]:
 
         assert action in range(self.n_nodes), "invalid action, must be in [0, n_nodes)"
 
@@ -162,7 +173,16 @@ class TspEnv:
             {},
         )
 
-    def render(self, save_path="./img_folder"):
+    def render(self, save_path="./img_folder") -> None:
+        """
+        Save the scene graph to a file.
+
+        Args:
+            save_path: path to save the image.
+
+        Returns:
+            None
+        """
 
         import os
 
@@ -271,12 +291,13 @@ def heuristic(state, eps=0.1):
 def demo_heuristic():
     """
     Demo the heuristic runner.
+    Save the process of the heuristic selection to a gif file.
     """
 
     env = TspEnv(n_nodes=20, dim=2, graph_type="ba")
 
     state = env.reset(1)
-    env.render("./img_folder/tmp")
+    env.render("./img_folder/_tmp")
     while True:
 
         action = heuristic(state)
@@ -284,7 +305,7 @@ def demo_heuristic():
         state, reward, done, info = env.step(action)
 
         print(f"action: {action}, reward: {reward}, done: {done}")
-        env.render("./img_folder/tmp")
+        env.render("./img_folder/_tmp")
         if done:
             break
 
@@ -294,7 +315,7 @@ def demo_heuristic():
     import subprocess
 
     subprocess.call(
-        ["convert", "-delay", "100", "./img_folder/tmp/*.png", "./img_folder/tmp.gif"]
+        ["convert", "-delay", "100", "./img_folder/_tmp/*.png", "./img_folder/_tmp.gif"]
     )
 
     # remove tmp folder
