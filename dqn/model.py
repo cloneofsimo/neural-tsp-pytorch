@@ -72,13 +72,18 @@ class GraphEdgeConvEmb(nn.Module):
         def n_width(n) -> int:
             return math.floor(pow(grow_size, n) + 1e-2)
 
+        self.vert_ff = None
+        self.vert_emb = None
+        self.edge_ff = None
+        self.edge_emb = None
+
         if input_vert_n_vocab is not None:
             self.vert_emb = nn.Embedding(
                 input_vert_n_vocab + 1, hidden_channels, padding_idx=input_vert_n_vocab
             )
 
-        else:
-            self.vert_emb = nn.Linear(input_vert_channels, hidden_channels, bias=False)
+        if input_vert_channels is not None:
+            self.vert_ff = nn.Linear(input_vert_channels, hidden_channels, bias=False)
 
         if input_edge_n_vocab is not None:
             self.edge_emb = nn.Embedding(
@@ -87,8 +92,8 @@ class GraphEdgeConvEmb(nn.Module):
                 padding_idx=input_edge_n_vocab,
             )
 
-        else:
-            self.edge_emb = nn.Linear(
+        if input_edge_channels is not None:
+            self.edge_ff = nn.Linear(
                 input_edge_channels, input_edge_channels, bias=False
             )
 
@@ -117,16 +122,34 @@ class GraphEdgeConvEmb(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
+        x: torch.Tensor = None,
+        x_emb: torch.Tensor = None,
+        edge_index: torch.Tensor = None,
         edge_attr: torch.Tensor = None,
+        edge_attr_emb: torch.Tensor = None,
         batch: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
 
-        x = self.vert_emb(x)
+        if self.vert_ff is not None:
+            x = self.vert_ff(x)
+        if self.vert_emb is not None:
+            x_emb = self.vert_emb(x_emb)
 
-        if edge_attr is not None:
-            edge_attr = self.edge_emb(edge_attr)
+            if self.vert_ff is not None:
+                x = x + x_emb
+            else:
+                x = x_emb
+
+        if self.edge_ff is not None:
+            edge_attr = self.edge_ff(edge_attr)
+
+        if self.edge_emb is not None:
+            edge_attr_emb = self.edge_emb(edge_attr_emb)
+
+            if self.edge_ff is not None:
+                edge_attr = edge_attr_emb + edge_attr
+            else:
+                edge_attr = edge_attr_emb
 
         x = self.main(x, edge_index, edge_attr)
         x = self.head(x)
